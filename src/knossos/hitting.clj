@@ -95,7 +95,8 @@
          dropped' dropped]
     (if-let [op (.pollFirst schedule)]
       (let [model'' (model/step model' op)
-            _       (pprint op)]
+            ;_       (pprint op)
+            ]
         (if (or (model/inconsistent? model'')
                 (= (:id op) id))
           ; Return the new model and the new auxiliary structures
@@ -108,8 +109,9 @@
 
       ; The schedule is exhausted, so switch to the delayed ops
       (let [[label op] (first delayed')
-            model''    (model/step model' op)
-            _          (pprint op)]
+            model'' (model/step model' op)
+            ;_          (pprint op)
+            ]
         (if (or (model/inconsistent? model'')
                 (= (:id op) id))
           ; Return the new model and the auxiliary structures
@@ -122,7 +124,7 @@
 
 (defn check-with-schedule-index
   "Given a model, a history, and a schedule index, generate a strong-hitting
-  schedule and run a model against it to see if it witnesses linearizability"
+  schedule and run a model against it to see if it witnesses linearizability."
   [model history sched-index]
   (let [p           (:process sched-index)
         labels      (:labels sched-index)
