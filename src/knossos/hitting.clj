@@ -185,6 +185,53 @@
                          dropped'
                          delayed'))))))))))
 
+(defn next-num
+  "Given a set of numbers s, return the first number greater than or equal
+  to i and less than n that is not in s. Return nil if no such number exists."
+  [n s i]
+  (cond (= n i)
+        nil
+
+        (contains? s i)
+        (recur n s (inc i))
+
+        :else
+        i))
+
+(defn next-perm
+  ([n p]
+   (let [[p' _] (next-perm n p (transient (set p)) (dec (count p)))]
+     p'))
+
+  ([n p s i]
+   (if (< i 0)
+     [nil s]
+     (if-let [pi (next-num n s (inc (p i)))]
+       (loop [p' (assoc! (transient p) i pi)
+              s' (-> s (disj! (p i)) (conj! pi))
+              pj 0
+              j  (inc i)]
+         (if (<= (count p) j)
+           [(persistent! p') s']
+           (let [pj (next-num n s' pj)]
+             (recur (assoc! p' j pj)
+                    (conj! s' pj)
+                    (inc pj)
+                    (inc j)))))
+       (recur n p (disj! s (p i)) (dec i))))))
+
+(defn permutations
+  ([n k]
+   (let [p  (vec (range k))]
+     (permutations n p (transient (set p)))))
+
+  ([n p s]
+    (when p
+      (lazy-seq
+        (cons p (lazy-seq
+                  (let [[p' s'] (next-perm n p s (dec (count p)))]
+                    (permutations n p' s'))))))))
+
 (defn start-analysis
   "Spawns a thread to check a history; returns Search"
   [model history]
