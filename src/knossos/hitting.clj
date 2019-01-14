@@ -4,6 +4,7 @@
   (:require [knossos [history :as history]
                      [search :as search]
                      [model :as model]
+                     [util :refer [deref-throw]]
                      [op :as op]]
             [knossos.model.memo :as memo :refer [memo]]
             [clojure.pprint :refer [pprint]])
@@ -246,10 +247,10 @@
         model   (:model memo)
         history (:history memo)]
     (loop [d 1]
-      (println " d=" d)
+      ;(println " d=" d)
       (if (> d n)
-        ; We didn't find the linearizability witness, so the history is
-        ; not linearizable
+        ; We didn't find a linearizability witness for d <= n,
+        ; so the history is not linearizable
         {:valid? false}
 
         ; Otherwise, generate schedule indices and perform the check
@@ -271,16 +272,27 @@
   [model history]
   (let [state   (atom {:running? true})
         results (promise)
-        worker  (Thread.)]
+        worker  (Thread.
+                  (fn []
+                    (try
+                      (deliver results
+                               (exhaustive-check model history))
+                      (catch InterruptedException _
+                        (let [{:keys [cause]} @state]
+                          (deliver results {:valid? :unknown
+                                            :cause  cause})))
+                      (catch Throwable t
+                        (deliver results t)))))]
     (.start worker)
     (reify search/Search
       (abort! [_ cause]
         (swap! state assoc
                :running? false
-               :cause cause))
+               :cause cause)
+        (.interrupt worker))
       (report [_] {})
-      (results [_] )
-      (results [_ timeout timeout-val] ))))
+      (results [_] (deref-throw results))
+      (results [_ timeout timeout-val] (deref-throw results timeout timeout-val)))))
 
 (defn analysis
   "Given an initial model state and a history, check to see if the history is

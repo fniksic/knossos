@@ -7,6 +7,7 @@
             [clojure.tools.cli :as cli]
             [knossos [competition :as competition]
                      [history :as history]
+                     [hitting :as hitting]
                      [linear :as linear]
                      [wgl :as wgl]
                      [model :as model]])
@@ -39,7 +40,8 @@
 (def algos
   {"competition" competition/analysis
    "wgl"         wgl/analysis
-   "linear"      linear/analysis})
+   "linear"      linear/analysis
+   "hitting"     hitting/analysis})
 
 (def opts
   "tools.cli options"
