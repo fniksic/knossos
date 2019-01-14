@@ -1,9 +1,11 @@
 (ns knossos.hitting
   "A linearizability checking approach based on strong hitting families:
   https://github.com/burcuku/check-lin"
-  (:require [knossos [search :as search]
-                     [op :as op]
-                     [model :as model]]
+  (:require [knossos [history :as history]
+                     [search :as search]
+                     [model :as model]
+                     [op :as op]]
+            [knossos.model.memo :as memo :refer [memo]]
             [clojure.pprint :refer [pprint]])
   (:import (java.util ArrayDeque)))
 
@@ -231,6 +233,38 @@
         (cons p (lazy-seq
                   (let [[p' s'] (next-perm n p s (dec (count p)))]
                     (permutations n p' s'))))))))
+
+(defn exhaustive-check
+  [model history]
+  (let [{:keys [m n history processes]} (-> history
+                                            history/complete
+                                            history/without-failures
+                                            history/ensure-indexed
+                                            history/parse-ops
+                                            prepare-history)
+        memo    (memo model history)
+        model   (:model memo)
+        history (:history memo)]
+    (loop [d 1]
+      (println " d=" d)
+      (if (> d n)
+        ; We didn't find the linearizability witness, so the history is
+        ; not linearizable
+        {:valid? false}
+
+        ; Otherwise, generate schedule indices and perform the check
+        ; in parallel
+        (let [sch-indices (for [p processes
+                                l (permutations n (dec d))]
+                            {:process p, :labels l})]
+          (if (every? model/inconsistent?
+                      (pmap #(check-with-schedule-index model history %)
+                            sch-indices))
+            ; Every model is inconsistent; recurse with the next d
+            (recur (inc d))
+
+            ; Otherwise a linearizability witness was found
+            {:valid? true}))))))
 
 (defn start-analysis
   "Spawns a thread to check a history; returns Search"
