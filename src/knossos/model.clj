@@ -4,6 +4,7 @@
   (:refer-clojure :exclude [set])
   (:import [clojure.lang PersistentQueue])
   (:require [clojure.set :as set]
+            [clojure.string :refer [join]]
             [knossos.op :as op]
             [potemkin :refer [definterface+]]
             [knossos.history :as history]
@@ -181,3 +182,68 @@
   "A FIFO queue."
   []
   (FIFOQueue. PersistentQueue/EMPTY))
+
+(defrecord ConcurrentHashMap [m]
+  Model
+  (step [this op]
+    (condp = (:f op)
+      :clear (ConcurrentHashMap. (sorted-map))
+
+      :remove (let [[k v] (:value op)]
+                (if (= v (m k))
+                  (ConcurrentHashMap. (dissoc m k))
+                  (inconsistent (str "can't remove " k
+                                     " with associated value " v))))
+
+      :isEmpty (if (= (empty? m) (:value op))
+                 this
+                 (inconsistent (str "inconsistent isEmpty result")))
+
+      :keys (let [curkeys (str "[" (join ", " (keys m)) "]")]
+              (if (= curkeys (:value op))
+                this
+                (inconsistent (str "can't return keys " curkeys))))
+
+      :keySet (let [curkeys (str "[" (join ", " (keys m)) "]")]
+                (if (= curkeys (:value op))
+                  this
+                  (inconsistent (str "can't return keySet " curkeys))))
+
+      :putAll (ConcurrentHashMap. (merge m (:value op)))
+
+      :get (let [[k v] (:value op)]
+             (if (= v (m k))
+               this
+               (inconsistent (str "can't get " k
+                                  " with associated value " v))))
+
+      :toString (let [mapstr (join ", "
+                                   (map #(let [[k v] %] (str k "=" v))
+                                        m))
+                      curstr (str "{" mapstr "}")]
+                  (if (= curstr (:value op))
+                    this
+                    (inconsistent (str "inconsistent toString: "
+                                       curstr " ≠ " (:value op)))))
+
+      :values (let [vals (sort (vals m))
+                    mapstr (join ", "
+                                 (map str vals))
+                    valstr (str "[" mapstr "]")]
+                (if (= valstr (:value op))
+                  this
+                  (inconsistent (str "inconsistent values: "
+                                     valstr " ≠ " (:value op)))))
+
+      :elements (let [vals (sort (vals m))
+                      mapstr (join ","
+                                   (map str vals))
+                      valstr (str "[" mapstr "]")]
+                  (if (= valstr (:value op))
+                    this
+                    (inconsistent (str "inconsistent elements: "
+                                       valstr " ≠ " (:value op))))))))
+
+(defn concurrent-hash-map
+  []
+  (ConcurrentHashMap. (sorted-map)))

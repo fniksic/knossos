@@ -247,7 +247,7 @@
         model   (:model memo)
         history (:history memo)]
     (loop [d 1]
-      ;(println " d=" d)
+      (println " d=" d)
       (if (> d n)
         ; We didn't find a linearizability witness for d <= n,
         ; so the history is not linearizable
@@ -265,7 +265,8 @@
             (recur (inc d))
 
             ; Otherwise a linearizability witness was found
-            {:valid? true}))))))
+            {:valid? true
+             :d      d}))))))
 
 (defn start-analysis
   "Spawns a thread to check a history; returns Search"

@@ -35,7 +35,8 @@
 (def models
   {"register"     model/register
    "cas-register" model/cas-register
-   "mutex"        model/mutex})
+   "mutex"        model/mutex
+   "concurrent-hash-map" model/concurrent-hash-map})
 
 (def algos
   {"competition" competition/analysis
