@@ -84,64 +84,71 @@
                        (inc i)
                        next-id)))))))
 
+(defmacro coalesce-schedule
+  ([] [nil nil])
+  ([x] x)
+  ([x & rest]
+    `(let [[l# op#] ~x]
+       (if (not (nil? op#))
+         [l# op#]
+         (coalesce-schedule ~@rest)))))
+
 (defn advance
   "Advances the model according to the schedule up to the operation with
-  the given id. The operation with the given id is assumed to be either
-  in the schedule or in the map of delayed operations.
+  the given id. The schedule consists of three parts:
 
-  The function returns a vector of the form [model' delayed' dropped'],
+    sch         -- contains non-delayed operations
+    sch-chain   -- contains operations delayed due to being in a chain
+    sch-labeled -- contains operations delayed due to being labeled
+
+  The first two parts (sch, sch-chain) are ArrayDeques, and the last
+  part is a sorted map from labels to operations.
+
+  The operation with the given id is assumed to be in one of the
+  parts of the schedule.
+
+  The function returns a vector of the form [model' sch-labeled' dropped'],
   consisting of the new versions of the model and the auxiliary data
-  structures."
-  [model schedule delayed dropped id]
-  (loop [model'   model
-         delayed' delayed
-         dropped' dropped]
-    (if-let [op (.pollFirst schedule)]
-      (let [model'' (model/step model' op)
-            ;_       (pprint op)
-            ]
-        (if (or (model/inconsistent? model'')
-                (= (:id op) id))
-          ; Return the new model and the new auxiliary structures
-          [model'' delayed' (disj! dropped' (:id op))]
+  structures. (No need to return the ArrayDeques.)"
+  [model sch sch-chain sch-labeled dropped id]
+  (let [[label op]   (coalesce-schedule [nil (.pollFirst sch)]
+                                        [nil (.pollFirst sch-chain)]
+                                        (first sch-labeled))
+        model'       (model/step model op)
+        sch-labeled' (dissoc sch-labeled label)]
+    (if (or (= (:id op) id)
+            (model/inconsistent? model'))
+      ; We have reached the operation with the given id, or the
+      ; model is inconsistent. Return the new model and the new
+      ; auxiliary structures.
+      [model' sch-labeled' dropped]
 
-          ; Recurse
-          (recur model''
-                 delayed'
-                 (conj! dropped' (:id op)))))
-
-      ; The schedule is exhausted, so switch to the delayed ops
-      (let [[label op] (first delayed')
-            model'' (model/step model' op)
-            ;_          (pprint op)
-            ]
-        (if (or (model/inconsistent? model'')
-                (= (:id op) id))
-          ; Return the new model and the auxiliary structures
-          [model'' (dissoc delayed' label) (disj! dropped' (:id op))]
-
-          ; Recurse
-          (recur model''
-                 (dissoc delayed' label)
-                 (conj! dropped' (:id op))))))))
+      ; Otherwise, recurse
+      (recur model'
+             sch
+             sch-chain
+             sch-labeled'
+             (conj! dropped (:id op))
+             id))))
 
 (defn check-with-schedule-index
   "Given a model, a history, and a schedule index, generate a strong-hitting
   schedule and run a model against it to see if it witnesses linearizability."
-  [model history sched-index]
-  (let [p           (:process sched-index)
-        labels      (:labels sched-index)
+  [model history sch-index]
+  (let [p           (:process sch-index)
+        labels      (:labels sch-index)
         ids->labels (into {} (map-indexed #(vector %2 %1) labels))
-        schedule  (ArrayDeque.)]
-    (loop [state     model
-           i         0                  ; index in the history
+        sch         (ArrayDeque.)
+        sch-chain   (ArrayDeque.)]
+    (loop [model       model
+           i           0                ; index in the history
            ; Ids of invoked ops whose completion we haven't seen, but they
            ; were stepped through by the model
-           dropped   (transient #{})
-           delayed   (sorted-map)]
+           dropped     (transient #{})
+           sch-labeled (sorted-map)]
       (if (<= (count history) i)
         ; We are done, return the model
-        state
+        model
 
         ; Otherwise process the current op
         (let [op (nth history i)
@@ -150,43 +157,44 @@
             ; The main case: insert the operation into the schedule
             (if-let [label (get ids->labels id)]
               ; The operation is labeled, so we must delay it appropriately
-              (recur state
+              (recur model
                      (inc i)
                      dropped
-                     (assoc delayed label op))
+                     (assoc sch-labeled label op))
 
               ; Otherwise, place it to the right position in the schedule
               (do (if (= (:process op) p)
-                    (.addLast schedule op)
-                    (.addFirst schedule op))
-                  (recur state
+                    (.addLast sch-chain op)
+                    (.addLast sch op))
+                  (recur model
                          (inc i)
                          dropped
-                         delayed)))
+                         sch-labeled)))
 
             ; Otherwise, op is a completion (ok/fail/info)
             (if (or (op/info? op)
                     (contains? dropped id))
               ; We ignore the op in this case and remove it from dropped
-              (recur state
+              (recur model
                      (inc i)
                      (disj! dropped id)
-                     delayed)
+                     sch-labeled)
 
               ; We advance the model up to the op
-              (let [[state' delayed' dropped'] (advance state
-                                                        schedule
-                                                        delayed
-                                                        dropped
-                                                        id)]
-                (if (model/inconsistent? state')
+              (let [[model' sch-label' dropped'] (advance model
+                                                          sch
+                                                          sch-chain
+                                                          sch-labeled
+                                                          dropped
+                                                          id)]
+                (if (model/inconsistent? model')
                   ; Return the model
-                  state'
+                  model'
 
-                  (recur state'
+                  (recur model'
                          (inc i)
                          dropped'
-                         delayed'))))))))))
+                         sch-label'))))))))))
 
 (defn next-num
   "Given a set of numbers s, return the first number greater than or equal
@@ -247,7 +255,7 @@
         model   (:model memo)
         history (:history memo)]
     (loop [d 1]
-      (println " d=" d)
+      ;(println " d=" d)
       (if (> d n)
         ; We didn't find a linearizability witness for d <= n,
         ; so the history is not linearizable
