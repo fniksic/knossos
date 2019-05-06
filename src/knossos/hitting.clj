@@ -123,7 +123,7 @@
       ; auxiliary structures.
       [model' sch-labeled' dropped]
 
-      ; Otherwise, recurse
+      ; Otherwise, recur
       (recur model'
              sch
              sch-chain
@@ -269,7 +269,7 @@
           (if (every? model/inconsistent?
                       (pmap #(check-with-schedule-index model history %)
                             sch-indices))
-            ; Every model is inconsistent; recurse with the next d
+            ; Every model is inconsistent; recur with the next d
             (recur (inc d))
 
             ; Otherwise a linearizability witness was found
